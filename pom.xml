@@ -12,9 +12,48 @@
         <scala.binary.version>2.12</scala.binary.version>
         <spark.version>3.5.8</spark.version>
         <arrow.version>17.0.0</arrow.version>
+        <adbc.version>0.14.0</adbc.version>
+        <avatica.version>1.25.0</avatica.version>
         <maven-compiler-plugin.version>3.11.0</maven-compiler-plugin.version>
         <scala-maven-plugin.version>4.8.0</scala-maven-plugin.version>
+        <doris.connector.version>1.3.0</doris.connector.version>
+        <!-- 修正：与 Arrow 17.0.0 兼容的 gRPC 版本 -->
+        <grpc.version>1.63.0</grpc.version>
+        <!-- 新增：统一 Netty 版本（与 gRPC 1.63.0 兼容） -->
+        <netty.version>4.1.110.Final</netty.version>
+        <!-- 新增：统一 SLF4J 版本 -->
+        <slf4j.version>1.7.36</slf4j.version>
     </properties>
+
+    <!-- 核心：锁定所有依赖版本，解决版本冲突 -->
+    <dependencyManagement>
+        <dependencies>
+            <!-- Netty BOM 锁定所有 Netty 组件版本 -->
+            <dependency>
+                <groupId>io.netty</groupId>
+                <artifactId>netty-bom</artifactId>
+                <version>${netty.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <!-- gRPC BOM 锁定所有 gRPC 组件版本 -->
+            <dependency>
+                <groupId>io.grpc</groupId>
+                <artifactId>grpc-bom</artifactId>
+                <version>${grpc.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <!-- Arrow 相关依赖版本锁定 -->
+            <dependency>
+                <groupId>org.apache.arrow</groupId>
+                <artifactId>arrow-bom</artifactId>
+                <version>${arrow.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
 
     <dependencies>
         <!-- Spark Core -->
@@ -22,7 +61,8 @@
             <groupId>org.apache.spark</groupId>
             <artifactId>spark-core_2.12</artifactId>
             <version>${spark.version}</version>
-<!--            <scope>provided</scope>-->
+            <!-- 生产环境建议开启 provided（集群已部署 Spark），测试环境可注释 -->
+            <!--            <scope>provided</scope>-->
         </dependency>
 
         <!-- Spark SQL -->
@@ -30,31 +70,36 @@
             <groupId>org.apache.spark</groupId>
             <artifactId>spark-sql_2.12</artifactId>
             <version>${spark.version}</version>
-<!--            <scope>provided</scope>-->
+            <!--            <scope>provided</scope>-->
         </dependency>
 
-        <!-- Arrow Flight SQL JDBC Core -->
+        <!-- Arrow Flight SQL 核心依赖 -->
         <dependency>
             <groupId>org.apache.arrow</groupId>
             <artifactId>flight-sql-jdbc-core</artifactId>
             <version>${arrow.version}</version>
         </dependency>
 
-        <!-- Arrow Flight Core -->
+        <!-- Source: https://mvnrepository.com/artifact/org.apache.arrow.adbc/adbc-core -->
+        <dependency>
+            <groupId>org.apache.arrow.adbc</groupId>
+            <artifactId>adbc-core</artifactId>
+            <version>0.14.0</version>
+        </dependency>
+
+        <!-- Arrow ADBC 驱动（Flight SQL 实现） -->
+        <dependency>
+            <groupId>org.apache.arrow.adbc</groupId>
+            <artifactId>adbc-driver-flight-sql</artifactId>
+            <version>${adbc.version}</version>
+        </dependency>
+        <!-- 显式引入Arrow Flight核心依赖（包含Location类） -->
         <dependency>
             <groupId>org.apache.arrow</groupId>
             <artifactId>flight-core</artifactId>
             <version>${arrow.version}</version>
         </dependency>
-
-        <!-- Arrow Vector -->
-        <dependency>
-            <groupId>org.apache.arrow</groupId>
-            <artifactId>arrow-vector</artifactId>
-            <version>${arrow.version}</version>
-        </dependency>
-
-        <!-- Arrow Memory Netty -->
+        <!-- Arrow 内存管理（Netty 实现） -->
         <dependency>
             <groupId>org.apache.arrow</groupId>
             <artifactId>arrow-memory-netty</artifactId>
@@ -65,21 +110,42 @@
         <dependency>
             <groupId>org.apache.calcite.avatica</groupId>
             <artifactId>avatica-core</artifactId>
-            <version>1.25.0</version>
+            <version>${avatica.version}</version>
         </dependency>
 
-        <!-- SLF4J API -->
+        <!-- gRPC 核心依赖（基于 BOM 锁定版本，无需重复指定 version） -->
+        <dependency>
+            <groupId>io.grpc</groupId>
+            <artifactId>grpc-netty-shaded</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.grpc</groupId>
+            <artifactId>grpc-protobuf</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.grpc</groupId>
+            <artifactId>grpc-stub</artifactId>
+        </dependency>
+
+        <!-- 注解依赖 -->
+        <dependency>
+            <groupId>javax.annotation</groupId>
+            <artifactId>javax.annotation-api</artifactId>
+            <version>1.3.2</version>
+            <scope>provided</scope>
+        </dependency>
+
+        <!-- SLF4J 核心 API + 单一日志实现（选择 log4j12，移除 slf4j-simple 解决冲突） -->
         <dependency>
             <groupId>org.slf4j</groupId>
             <artifactId>slf4j-api</artifactId>
-            <version>1.7.36</version>
+            <version>${slf4j.version}</version>
         </dependency>
-
-        <!-- SLF4J Simple -->
         <dependency>
             <groupId>org.slf4j</groupId>
-            <artifactId>slf4j-simple</artifactId>
-            <version>1.7.36</version>
+            <artifactId>slf4j-log4j12</artifactId>
+            <version>${slf4j.version}</version>
+            <scope>runtime</scope>
         </dependency>
     </dependencies>
 
@@ -90,8 +156,9 @@
                 <artifactId>maven-compiler-plugin</artifactId>
                 <version>${maven-compiler-plugin.version}</version>
                 <configuration>
-                    <skipMain>true</skipMain>
-                    <skip>true</skip>
+                    <source>${java.version}</source>
+                    <target>${java.version}</target>
+                    <!-- 移除 skip 配置，确保 Java 代码能正常编译（如有） -->
                 </configuration>
             </plugin>
 
@@ -119,8 +186,10 @@
                 <configuration>
                     <createDependencyReducedPom>false</createDependencyReducedPom>
                     <artifactSet>
+                        <!-- 原有includes配置，保持不变 -->
                         <includes>
                             <include>org.apache.arrow:*</include>
+                            <include>org.apache.arrow.adbc:*</include>
                             <include>org.apache.calcite.avatica:*</include>
                             <include>io.grpc:*</include>
                             <include>com.google.protobuf:*</include>
@@ -128,7 +197,13 @@
                         </includes>
                     </artifactSet>
                     <transformers>
+                        <!-- 原有ServicesResourceTransformer，保持不变 -->
                         <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+
+                        <!-- 新增：指定主类（你的main方法所在类） -->
+                        <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                            <mainClass>com.portofino.arrow.ArrowFlightSQLSuite</mainClass>
+                        </transformer>
                     </transformers>
                 </configuration>
                 <executions>
