@@ -7,12 +7,9 @@ import org.apache.arrow.adbc.core.AdbcStatement
 import org.apache.arrow.adbc.driver.flightsql.FlightSqlDriver
 import org.apache.arrow.memory.BufferAllocator
 import org.apache.arrow.memory.RootAllocator
-import org.apache.arrow.vector.VectorSchemaRoot
 import org.apache.arrow.vector.DateDayVector
 import org.apache.arrow.vector.types.Types
-import org.apache.arrow.vector.types.pojo.ArrowType
 import org.apache.spark.sql.SparkSession
-import org.apache.log4j.{Level, Logger}
 
 import java.sql.DriverManager
 import java.time.LocalDate
@@ -22,7 +19,7 @@ import scala.collection.JavaConverters._
 /**
  * Arrow Flight SQL 测试程序
  *
- * 测试通过 Arrow Flight SQL JDBC 驱动连接 Doris 并读取数据
+ * 测试通过 Arrow Flight SQL JDBC 驱动、ADBC + FlightSQL协议 连接 Doris 并读取数据
  *
  * @author jiangxintong@chinamobile.com 2026/1/28
  */
@@ -42,7 +39,7 @@ object ArrowFlightSQLSuite {
 
     try {
 
-      // 第一步：测试直接 JDBC 连接（重新建立连接）
+      // 第一步：测试直接 JDBC 连接
       println("\n" + "=" * 60)
       println("Testing Direct JDBC Connection")
       println("=" * 60)
@@ -55,7 +52,7 @@ object ArrowFlightSQLSuite {
           e.printStackTrace()
       }
 
-      // 第二步：测试 ADBC 原生 API
+      // 第二步：测试 ADBC
       println("\n" + "=" * 60)
       println("Testing ADBC Native API")
       println("=" * 60)
@@ -67,19 +64,6 @@ object ArrowFlightSQLSuite {
           println(s"✗ ADBC测试失败: ${e.getMessage}")
           e.printStackTrace()
       }
-
-      // 第三步：测试 Spark doris 连接器开启 arrow
-      val spark = SparkSession
-        .builder()
-        .appName("ArrowFlightSQLTest")
-        .master("local[4]")
-        .getOrCreate()
-
-      spark.sparkContext.setLogLevel("WARN")
-      println("\n" + "=" * 60)
-      println("Testing Spark JDBC Reader")
-      println("=" * 60)
-      testSparkJdbcReader(spark)
 
       println("\n" + "=" * 60)
       println("所有测试完成")
@@ -99,12 +83,10 @@ object ArrowFlightSQLSuite {
 
     // 加载驱动
     Class.forName("org.apache.arrow.driver.jdbc.ArrowFlightJdbcDriver")
-
     // 构建连接 URL
     val url = s"jdbc:arrow-flight-sql://$host:$port" +
       "?useServerPrepStmts=false&cachePrepStmts=true&useSSL=false&useEncryption=false"
     println(s"URL: $url")
-
     // 创建连接属性
     val props = new Properties()
     props.setProperty("user", user)
@@ -149,7 +131,7 @@ object ArrowFlightSQLSuite {
   }
 
   /**
-   * 测试 ADBC 原生 API + Arrow Flight SQL 读取 Doris（核心实现，与版本无关）
+   * 测试 ADBC  + Arrow Flight SQL 读取 Doris
    */
   def testAdbcNativeFlightSQL(host: String, port: String, user: String, password: String, query: String): Unit = {
     println("Testing ADBC+Flight SQL")
@@ -161,11 +143,11 @@ object ArrowFlightSQLSuite {
     var queryResult: AdbcStatement.QueryResult = null
 
     try {
-      // 初始化内存分配器（RootAllocator 是所有子分配器的根节点）
+      // 初始化内存分配器
       allocator = new RootAllocator(Long.MaxValue)
       println("✓ Arrow BufferAllocator initialized")
 
-      // 2. 构建 ADBC Flight SQL 驱动配置（使用 TypedKey.set() 方法）
+      // 2. 构建 ADBC Flight SQL 驱动配置
       val adbcConfig = new HashMap[String, Object]()
       AdbcDriver.PARAM_URI.set(adbcConfig, s"grpc://$host:$port")
       AdbcDriver.PARAM_USERNAME.set(adbcConfig, user)
@@ -230,32 +212,6 @@ object ArrowFlightSQLSuite {
       if (database != null) database.close()
       if (allocator != null) allocator.close()
       println("✓ ADBC resources closed successfully")
-    }
-  }
-  /**
-   * 测试 Spark JDBC 读取
-   */
-  def testSparkJdbcReader(spark: SparkSession): Unit = {
-    println("Testing Spark doris arrow ...")
-    try {
-      val df = spark.read.format("doris")
-        .option("doris.table.identifier", "test_db.user_visit")
-        .option("doris.fenodes", "doris-fe:8030")
-        .option("doris.user", "root")
-        .option("doris.password", "")
-        .option("doris.read.mode", "arrow")
-        .option("doris.read.arrow-flight-sql.port", "8070")
-        .load()
-      // 第一种 DataFrame API 形式，直接加载数据生成 DataFrame，后续可直接对 DataFrame 进行处理。
-      println("=== DataFrame API 读取结果 ===")
-      df.printSchema()
-      df.show(10) // 展示前 10 行数据
-      df.count() // 统计数量
-
-    } catch {
-      case e: Exception =>
-        println(s"✗ Spark JDBC Reader failed: ${e.getMessage}")
-        e.printStackTrace()
     }
   }
 }
